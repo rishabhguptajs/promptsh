@@ -9,6 +9,8 @@ const path = require('path');
  * - grep -r <pattern> <directory> - Recursively search in directory
  * - grep -i <pattern> <file> - Case-insensitive search
  * - grep -n <pattern> <file> - Show line numbers
+ * - grep -A N <pattern> <file> - Show N lines after each match
+ * - grep -B N <pattern> <file> - Show N lines before each match
  */
 async function grep(args, context) {
     if (args.length < 2) {
@@ -40,7 +42,10 @@ Examples:
         invertMatch: false,
         countOnly: false,
         showFilenamesOnly: false,
-        wholeWords: false
+        wholeWords: false,
+        beforeContext: 0,
+        afterContext: 0,
+        multipleFiles: false
     };
 
     let pattern = null;
@@ -63,6 +68,28 @@ Examples:
             options.showFilenamesOnly = true;
         } else if (option === '-w') {
             options.wholeWords = true;
+        } else if (option === '-A') {
+            if (i + 1 < args.length && /^\d+$/.test(args[i + 1])) {
+                options.afterContext = parseInt(args[i + 1], 10);
+                i++;
+            } else {
+                return {
+                    success: false,
+                    output: 'Invalid usage for -A. Example: -A 3',
+                    error: 'INVALID_ARGS'
+                };
+            }
+        } else if (option === '-B') {
+            if (i + 1 < args.length && /^\d+$/.test(args[i + 1])) {
+                options.beforeContext = parseInt(args[i + 1], 10);
+                i++;
+            } else {
+                return {
+                    success: false,
+                    output: 'Invalid usage for -B. Example: -B 2',
+                    error: 'INVALID_ARGS'
+                };
+            }
         } else if (option === '--help') {
             return {
                 success: true,
@@ -81,6 +108,8 @@ Options:
   -c    Count matching lines
   -l    Show only filenames with matches
   -w    Match whole words only
+  -A N  Print N lines of trailing context after each match
+  -B N  Print N lines of leading context before each match
   --help Show this help message
 
 Examples:
@@ -88,6 +117,8 @@ Examples:
   grep -r "function" src/            - Recursively search for "function"
   grep -i "ERROR" log.txt            - Case-insensitive search
   grep -n "TODO" *.js                - Show line numbers
+  grep -A 2 "ERROR" app.log         - Show 2 lines after each match
+  grep -B 1 "start" app.log         - Show 1 line before each match
   grep -c "error" *.log             - Count matching lines`,
                 data: { help: true }
             };
@@ -121,6 +152,8 @@ Examples:
     const results = [];
     let totalMatches = 0;
     let filesWithMatches = 0;
+
+    options.multipleFiles = files.length > 1;
 
     for (const file of files) {
         try {
@@ -202,28 +235,29 @@ async function searchInFile(filePath, pattern, options, context) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const lineNumber = i + 1;
-        
-        let isMatch = false;
-        if (options.wholeWords) {
-            isMatch = regexPattern.test(line);
-        } else {
-            isMatch = regexPattern.test(line);
-        }
+
+        let isMatch = regexPattern.test(line);
 
         if (options.invertMatch) {
             isMatch = !isMatch;
         }
 
         if (isMatch) {
-            let matchLine = line;
-            
-            if (options.showLineNumbers) {
-                matchLine = `${filePath}:${lineNumber}:${matchLine}`;
-            } else if (files.length > 1) {
-                matchLine = `${filePath}:${matchLine}`;
+            const start = Math.max(0, i - options.beforeContext);
+            const end = Math.min(lines.length - 1, i + options.afterContext);
+
+            for (let j = start; j <= end; j++) {
+                const ctxLineNumber = j + 1;
+                let outLine = lines[j];
+
+                if (options.showLineNumbers) {
+                    outLine = `${filePath}:${ctxLineNumber}:${outLine}`;
+                } else if (options.multipleFiles) {
+                    outLine = `${filePath}:${outLine}`;
+                }
+
+                matches.push(outLine);
             }
-            
-            matches.push(matchLine);
         }
     }
 
