@@ -70,7 +70,7 @@ class CLILoop {
     }
 
     /**
-     * Handle user input
+     * Handle user input with agent support
      * @param {string} input - User input string
      */
     async handleInput(input) {
@@ -86,13 +86,31 @@ class CLILoop {
 
         try {
             this.sessionContext.commandCount++;
+            let result = null;
+            let pendingConfirmation = null;
 
-            const result = await executor.execute(input, this.sessionContext);
+            result = await executor.execute(input, this.sessionContext);
+
+            if (result.data && result.data.requiresConfirmation) {
+                pendingConfirmation = result.data.agentResult;
+                this.displayOutput(result);
+                this.rl.question('Your response: ', async (confirmation) => {
+                    const confirmationResult = await executor.handleConfirmation(
+                        confirmation,
+                        pendingConfirmation,
+                        this.sessionContext
+                    );
+                    this.displayOutput(confirmationResult);
+                    this.updatePrompt();
+                    this.rl.prompt();
+                });
+                return;
+            }
 
             this.displayOutput(result);
 
-            this.updateSessionContext(input, result);
 
+            this.updateSessionContext(input, result);
             this.updatePrompt();
 
         } catch (error) {
@@ -127,10 +145,6 @@ class CLILoop {
             console.error(`${errorColor}Error: ${result.output}${resetColor}`);
         }
 
-        if (result.data && result.data.totalCommands > 1) {
-            const { totalCommands, successfulCommands } = result.data;
-            console.log(`\nExecuted ${successfulCommands}/${totalCommands} commands successfully`);
-        }
     }
 
     /**
@@ -155,20 +169,10 @@ class CLILoop {
      * Handle exit/cleanup
      */
     handleExit() {
-        console.log('\nGoodbye! 👋');
-        
-        const duration = new Date() - new Date(this.sessionContext.startTime);
-        const minutes = Math.floor(duration / 60000);
-        const seconds = Math.floor((duration % 60000) / 1000);
-        
-        console.log(`Session summary:`);
-        console.log(`- Commands executed: ${this.sessionContext.commandCount}`);
-        console.log(`- Session duration: ${minutes}m ${seconds}s`);
-        
         if (this.rl) {
             this.rl.close();
         }
-        
+
         process.exit(0);
     }
 
@@ -190,15 +194,10 @@ class CLILoop {
      */
     start() {
         if (this.isRunning) {
-            console.log('CLI is already running');
             return;
         }
 
         this.isRunning = true;
-        
-        console.log('🚀 Welcome to PromptSH - Your AI-Powered Shell');
-        console.log('Type commands or ask in natural language. Use "exit" to quit.');
-        console.log('💡 Autocomplete: Tab for suggestions, Right arrow to accept, Ctrl+Space for next word\n');
 
         this.initializeReadline();
         
