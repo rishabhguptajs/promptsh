@@ -15,20 +15,38 @@ function cd(args, context) {
         const fullPath = path.resolve(context.cwd, targetDir);
         
         if (!fs.existsSync(fullPath)) {
-            return `cd: ${targetDir}: No such file or directory`;
+            return {
+                success: false,
+                output: `cd: ${targetDir}: No such file or directory`,
+                error: 'DIRECTORY_NOT_FOUND'
+            };
         }
         
         const stats = fs.statSync(fullPath);
         if (!stats.isDirectory()) {
-            return `cd: ${targetDir}: Not a directory`;
+            return {
+                success: false,
+                output: `cd: ${targetDir}: Not a directory`,
+                error: 'NOT_A_DIRECTORY'
+            };
         }
         
         context.cwd = fullPath;
         
-        return fullPath;
+        return {
+            success: true,
+            output: fullPath,
+            contextUpdate: {
+                cwd: fullPath
+            }
+        };
         
     } catch (error) {
-        return `cd: ${error.message}`;
+        return {
+            success: false,
+            output: `cd: ${error.message}`,
+            error: 'EXECUTION_ERROR'
+        };
     }
 }
 
