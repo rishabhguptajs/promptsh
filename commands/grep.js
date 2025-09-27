@@ -90,6 +90,8 @@ Examples:
                     error: 'INVALID_ARGS'
                 };
             }
+
+            hehhhee andlja
         } else if (option === '--help') {
             return {
                 success: true,
