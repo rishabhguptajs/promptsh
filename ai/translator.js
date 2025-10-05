@@ -18,7 +18,7 @@ class AIAgent {
     constructor() {
         this.apiKey = process.env.OPENROUTER_API_KEY;
         this.apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-        this.model = 'x-ai/grok-4-fast:free';
+        this.model = 'meta-llama/llama-4-maverick:free';
         
         this.commandWhitelist = new Set([
             'mkdir', 'mv', 'rm', 'ls', 'cd', 'pwd', 'cp', 'cat', 'echo', 
@@ -68,7 +68,7 @@ class AIAgent {
             this.updateWorkflowMemory(context, previousResult);
 
             const agentPrompt = this.buildAgentPrompt(input, context, previousResult);
-            
+
             const response = await this.callOpenRouterAPI(agentPrompt);
 
             if (!response.success) {
@@ -130,31 +130,27 @@ class AIAgent {
         const cwd = context.cwd || process.cwd();
         const availableCommands = Array.from(this.commandWhitelist).join(', ');
 
-        return `You are a HIGHLY ACCURATE AI Shell Agent that converts natural language to precise shell commands.
+        return `You are a DEVELOPER ASSISTANT AI that converts natural language requests into safe shell commands for software development tasks.
 
 **CONTEXT:**
 - Current working directory: ${cwd}
-- Available shell commands: ${availableCommands}
-- Your job: Convert ANY natural language input into VALID shell commands
+- Available safe commands: ${availableCommands}
+- Purpose: Help developers with file management, navigation, and system tasks
 
-**MANDATORY REQUIREMENTS:**
-1. ONLY use commands from this list: ${availableCommands}
-2. Parse natural language EXACTLY - understand casual speech patterns
-3. Generate PRECISE shell commands - no ambiguity
-4. Multi-step requests → Multiple commands in array
-5. Single requests → Single command
-6. ALWAYS return valid, executable commands
-7. 95%+ confidence required
+**IMPORTANT SAFETY RULES:**
+1. ONLY use commands from this approved list: ${availableCommands}
+2. Generate SAFE, NON-DESTRUCTIVE commands by default
+3. For file removal operations, require explicit confirmation
+4. Parse developer requests accurately and helpfully
 
-**NATURAL LANGUAGE PATTERNS TO RECOGNIZE:**
-- Directory navigation: "go to X", "cd to X", "change to X folder", "enter X directory"
-- File operations: "list files", "show all files", "list everything", "show contents"
-- Directory creation: "make folder X", "create directory X", "new folder X"
-- File operations: "copy X to Y", "move X to Y", "backup X"
-- Search operations: "find X files", "search for X", "locate X"
+**COMMON DEVELOPER REQUESTS:**
+- Navigation: "go to folder X", "cd to X", "change directory to X"
+- File listing: "show files", "list contents", "see what's here"
+- File management: "copy file A to B", "move file A to B", "create folder X"
+- Search: "find files with X", "search for Y", "locate Z"
 
-**User Input:** "${input}"
-${previousResult ? `**Previous Command Result:** ${JSON.stringify(previousResult, null, 2)}` : ''}
+**User Request:** "${input}"
+${previousResult ? `**Previous Result:** ${JSON.stringify(previousResult, null, 2)}` : ''}
 
 **EXAMPLES:**
 Input: "go to the ai folder and list all files"
@@ -169,30 +165,24 @@ Output: ["find . -name "*.js" -type f"]
 Input: "make a new folder called projects"
 Output: ["mkdir -p projects"]
 
-**RESPONSE FORMAT (JSON ONLY):**
+**REQUIRED JSON RESPONSE FORMAT:**
 {
   "actions": [
     {
       "command": "exact_shell_command_here",
-      "explanation": "what this command does",
+      "explanation": "brief description of what this does",
       "confidence": 0.95,
       "requires_confirmation": false,
       "is_critical": false
     }
   ],
-  "suggestions": [
-    {
-      "action": "logical next step",
-      "reasoning": "why this would be useful",
-      "confidence": 0.85
-    }
-  ],
-  "reasoning": "Step-by-step interpretation of the natural language input",
+  "suggestions": [],
+  "reasoning": "How I interpreted the request",
   "confidence": 0.95,
   "should_ask_user": false
 }
 
-**CRITICAL: Return ACCURATE commands. If input is unclear, interpret it literally and precisely.**`;
+**IMPORTANT:** Always return valid JSON with executable commands from the approved list.`;
     }
 
     /**
@@ -202,7 +192,14 @@ Output: ["mkdir -p projects"]
      */
     parseAgentResponse(content) {
         try {
-            return JSON.parse(content);
+            // Strip markdown code blocks if present
+            let cleanContent = content.trim();
+            if (cleanContent.startsWith('```json') && cleanContent.endsWith('```')) {
+                cleanContent = cleanContent.slice(7, -3).trim();
+            } else if (cleanContent.startsWith('```') && cleanContent.endsWith('```')) {
+                cleanContent = cleanContent.slice(3, -3).trim();
+            }
+            return JSON.parse(cleanContent);
         } catch (error) {
             // Fallback parsing for non-JSON responses
             const fallback = this.parseFallbackResponse(content);
@@ -448,15 +445,23 @@ Output: ["mkdir -p projects"]
                 return {
                     success: true,
                     content: content,
-                    commands: parsed.commands || [],
+                    actions: parsed.actions || [],
                     explanation: parsed.explanation || ''
                 };
             } catch (parseError) {
                 const commands = this.extractCommandsFromText(content);
+                // Convert commands to actions format for fallback
+                const actions = commands.map(cmd => ({
+                    command: cmd,
+                    explanation: 'Extracted from AI response',
+                    confidence: 0.8,
+                    requires_confirmation: this.shouldRequireConfirmation(cmd),
+                    is_critical: false
+                }));
                 return {
                     success: true,
                     content: content,
-                    commands: commands,
+                    actions: actions,
                     explanation: content
                 };
             }
@@ -467,21 +472,21 @@ Output: ["mkdir -p projects"]
                     success: false,
                     message: `API Error: ${error.response.status} - ${error.response.data?.error?.message || 'Unknown error'}`,
                     content: '',
-                    commands: []
+                    actions: []
                 };
             } else if (error.code === 'ECONNABORTED') {
                 return {
                     success: false,
                     message: 'API request timeout. Please try again.',
                     content: '',
-                    commands: []
+                    actions: []
                 };
             } else {
                 return {
                     success: false,
                     message: `Network error: ${error.message}`,
                     content: '',
-                    commands: []
+                    actions: []
                 };
             }
         }
@@ -523,7 +528,7 @@ class AITranslator {
     constructor() {
         this.apiKey = process.env.OPENROUTER_API_KEY;
         this.apiUrl = 'https://openrouter.ai/api/v1/chat/completions';
-        this.model = 'x-ai/grok-4-fast:free';
+        this.model = 'meta-llama/llama-4-maverick:free';
         
         this.commandWhitelist = new Set([
             'mkdir', 'mv', 'rm', 'ls', 'cd', 'pwd', 'cp', 'cat', 'echo', 
@@ -561,7 +566,7 @@ class AITranslator {
                     success: false,
                     message: 'OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.',
                     content: '',
-                    commands: []
+                    actions: []
                 };
             }
 
@@ -587,7 +592,7 @@ class AITranslator {
             return {
                 success: false,
                 message: `Translation error: ${error.message}`,
-                commands: []
+                actions: []
             };
         }
     }
@@ -684,21 +689,21 @@ NEVER return empty commands! If unsure, make your best interpretation!`;
                     success: false,
                     message: `API Error: ${error.response.status} - ${error.response.data?.error?.message || 'Unknown error'}`,
                     content: '',
-                    commands: []
+                    actions: []
                 };
             } else if (error.code === 'ECONNABORTED') {
                 return {
                     success: false,
                     message: 'API request timeout. Please try again.',
                     content: '',
-                    commands: []
+                    actions: []
                 };
             } else {
                 return {
                     success: false,
                     message: `Network error: ${error.message}`,
                     content: '',
-                    commands: []
+                    actions: []
                 };
             }
         }
