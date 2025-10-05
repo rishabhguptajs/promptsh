@@ -33,10 +33,6 @@ function cd(args, context) {
         
         context.cwd = fullPath;
 
-
-        console.log('cd: ', fullPath);
-        console.log(process.env)
-        
         return {
             success: true,
             output: fullPath,

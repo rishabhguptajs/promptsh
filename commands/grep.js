@@ -91,7 +91,6 @@ Examples:
                 };
             }
 
-            hehhhee andlja
         } else if (option === '--help') {
             return {
                 success: true,
