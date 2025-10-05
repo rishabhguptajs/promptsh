@@ -32,7 +32,7 @@ function cd(args, context) {
         }
         
         context.cwd = fullPath;
-        
+
         return {
             success: true,
             output: fullPath,
@@ -40,6 +40,7 @@ function cd(args, context) {
                 cwd: fullPath
             }
         };
+
         
     } catch (error) {
         return {
